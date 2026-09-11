@@ -1,0 +1,718 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Países Elementais — Mapa Shinobi</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Yuji+Syuku&family=Shippori+Mincho:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#14161f;
+    --ink-2:#1c1f2c;
+    --parchment:#e9dfc4;
+    --parchment-dim:#d8cca6;
+    --seal-red:#9c3b34;
+    --gold:#c6a55c;
+    --fire:#b8452f;
+    --wind:#c99a4a;
+    --water:#3d7189;
+    --lightning:#6f5a91;
+    --earth:#7a6a45;
+    --minor:#8a7f66;
+    --line:rgba(233,223,196,0.18);
+  }
+
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--ink);
+    color:var(--parchment);
+    font-family:'Shippori Mincho', serif;
+    overflow-x:hidden;
+    min-height:100vh;
+  }
+
+  ::selection{background:var(--seal-red); color:var(--parchment);}
+
+  .noise-layer{
+    position:fixed; inset:0; pointer-events:none; z-index:1;
+    opacity:.05; mix-blend-mode:overlay;
+  }
+
+  header.top{
+    position:relative; z-index:5;
+    display:flex; flex-direction:column; align-items:center;
+    padding:48px 24px 28px;
+    text-align:center;
+  }
+  header.top .kanji-mark{
+    font-size:15px; letter-spacing:.5em; color:var(--gold);
+    margin-bottom:10px; opacity:.85;
+  }
+  header.top h1{
+    font-family:'Yuji Syuku', serif;
+    font-size:clamp(34px,6vw,64px);
+    margin:0;
+    color:var(--parchment);
+    letter-spacing:.03em;
+    text-shadow:0 0 30px rgba(198,165,92,0.25);
+  }
+  header.top p.sub{
+    max-width:520px;
+    margin:14px auto 0;
+    font-size:15px;
+    line-height:1.8;
+    color:var(--parchment-dim);
+  }
+
+  .legend{
+    position:relative; z-index:5;
+    display:flex; flex-wrap:wrap; justify-content:center; gap:10px 22px;
+    padding:0 24px 30px;
+  }
+  .legend button{
+    all:unset; cursor:pointer;
+    display:flex; align-items:center; gap:8px;
+    font-family:'Shippori Mincho', serif;
+    font-size:13.5px; color:var(--parchment-dim);
+    padding:6px 12px; border-radius:20px;
+    border:1px solid var(--line);
+    transition:border-color .25s, color .25s, background .25s;
+  }
+  .legend button .dot{
+    width:10px; height:10px; border-radius:50%;
+    display:inline-block;
+    box-shadow:0 0 8px currentColor;
+  }
+  .legend button.active{ color:var(--parchment); border-color:var(--gold); background:rgba(198,165,92,0.08); }
+  .legend button:hover{ color:var(--parchment); }
+
+  .stage{
+    position:relative;
+    max-width:1180px;
+    margin:0 auto 80px;
+    padding:0 24px;
+    z-index:3;
+  }
+
+  .map-frame{
+    position:relative;
+    border:1px solid var(--line);
+    border-radius:4px;
+    background:
+      radial-gradient(ellipse at 30% 20%, rgba(198,165,92,0.06), transparent 55%),
+      radial-gradient(ellipse at 75% 80%, rgba(61,113,137,0.08), transparent 55%),
+      var(--ink-2);
+    box-shadow: 0 40px 100px -40px rgba(0,0,0,0.7), inset 0 0 120px rgba(0,0,0,0.35);
+    overflow:hidden;
+  }
+
+  svg#map{ width:100%; height:auto; display:block; }
+
+  .land{ transition: opacity .3s; }
+  .land-texture{ mix-blend-mode:multiply; opacity:.5; pointer-events:none; }
+  .island{ transition: opacity .3s; }
+  .land-label{
+    font-family:'Yuji Syuku', serif;
+    fill:var(--parchment-dim);
+    opacity:.5;
+    letter-spacing:.08em;
+    pointer-events:none;
+  }
+
+  .village{ cursor:pointer; }
+  .village .ring{
+    fill:none; stroke-width:1.4; opacity:.55;
+    transform-origin:center;
+    animation:pulse 3.2s ease-in-out infinite;
+  }
+  .village.dimmed{ opacity:.18; }
+  .village.dimmed .ring{ animation:none; }
+  @keyframes pulse{
+    0%,100%{ r:13; opacity:.5; }
+    50%{ r:18; opacity:0; }
+  }
+  .village .badge{ transition: transform .2s; transform-origin:center; }
+  .village:hover .badge{ transform:scale(1.12); }
+  .village .icon-glyph{ fill:none; stroke:var(--ink); stroke-width:2.2; stroke-linecap:round; stroke-linejoin:round; }
+  .village .icon-glyph.filled{ fill:var(--ink); stroke:none; }
+  .village .label{
+    font-family:'Shippori Mincho', serif;
+    font-weight:700;
+    font-size:12px;
+    fill:var(--parchment);
+    paint-order:stroke;
+    stroke:var(--ink);
+    stroke-width:3px;
+    pointer-events:none;
+    opacity:0;
+    transition:opacity .2s;
+  }
+  .village:hover .label, .village.selected .label{ opacity:1; }
+  .village.selected .badge circle.core{ stroke:var(--parchment); stroke-width:2.4px; }
+
+  /* side panel */
+  .panel-backdrop{
+    position:fixed; inset:0; background:rgba(10,11,16,.55);
+    opacity:0; pointer-events:none; transition:opacity .35s;
+    z-index:20;
+  }
+  .panel-backdrop.open{ opacity:1; pointer-events:auto; }
+
+  .panel{
+    position:fixed; top:0; right:0; height:100%;
+    width:min(430px, 92vw);
+    background:linear-gradient(180deg, var(--ink-2), var(--ink));
+    border-left:1px solid var(--line);
+    transform:translateX(100%);
+    transition:transform .4s cubic-bezier(.2,.8,.2,1);
+    z-index:21;
+    overflow-y:auto;
+    padding:32px 30px 60px;
+  }
+  .panel.open{ transform:translateX(0); }
+  .panel .close-btn{
+    all:unset; cursor:pointer; float:right;
+    font-family:'Shippori Mincho', serif;
+    color:var(--parchment-dim); font-size:13px;
+    border:1px solid var(--line); padding:6px 14px; border-radius:20px;
+  }
+  .panel .close-btn:hover{ color:var(--parchment); border-color:var(--gold); }
+
+  .panel .emblem{
+    width:64px; height:64px; border-radius:50%;
+    display:flex; align-items:center; justify-content:center;
+    border:2px solid var(--gold);
+    margin:6px 0 18px; clear:both;
+    box-shadow:0 0 24px rgba(198,165,92,0.15);
+  }
+  .panel .emblem svg{ width:30px; height:30px; }
+  .panel .country-tag{
+    font-size:12px; letter-spacing:.15em; text-transform:uppercase;
+    color:var(--parchment-dim); margin-bottom:6px;
+  }
+  .panel h2{
+    font-family:'Yuji Syuku', serif;
+    font-size:30px; margin:0 0 4px; color:var(--parchment);
+  }
+  .panel .kage{
+    font-size:14px; color:var(--gold); margin-bottom:20px;
+  }
+  .panel .desc{
+    font-size:14.5px; line-height:1.85; color:var(--parchment-dim);
+    margin-bottom:22px;
+  }
+  .panel .stat-row{
+    display:flex; justify-content:space-between;
+    font-size:13px; padding:10px 0; border-top:1px solid var(--line);
+  }
+  .panel .stat-row span:first-child{ color:var(--parchment-dim); }
+  .panel .stat-row span:last-child{ color:var(--parchment); text-align:right; max-width:60%; }
+  .panel .figures{
+    margin-top:22px; padding-top:18px; border-top:1px solid var(--line);
+  }
+  .panel .figures h3{
+    font-size:12px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--parchment-dim); font-weight:400; margin:0 0 10px;
+  }
+  .panel .chip{
+    display:inline-block; font-size:12.5px; color:var(--parchment);
+    border:1px solid var(--line); border-radius:14px;
+    padding:4px 11px; margin:0 6px 6px 0;
+  }
+
+  footer{
+    text-align:center; padding:0 24px 50px;
+    font-size:12px; color:var(--parchment-dim); opacity:.6;
+    position:relative; z-index:5;
+  }
+
+  .hint{
+    text-align:center; font-size:12px; color:var(--parchment-dim); opacity:.55;
+    padding-top:14px;
+  }
+
+  @media (max-width: 640px){
+    header.top{ padding-top:34px; }
+  }
+</style>
+</head>
+<body>
+
+<svg class="noise-layer"><filter id="n"><feTurbulence baseFrequency="0.9" numOctaves="2" stitchTiles="stitch"/></filter><rect width="100%" height="100%" filter="url(#n)"/></svg>
+
+<header class="top">
+  <div class="kanji-mark">忍 の 国 々</div>
+  <h1>HIDDEN</h1>
+  <p class="sub">Mapa conceitual entre aldeias e menores. A escolha de sua aldeia ou ponto de partida influencia diretamente na narrativa pessoal do personagem.</p>
+</header>
+
+<div class="legend" id="legend"></div>
+
+<div class="stage">
+  <div class="map-frame">
+    <svg id="map" viewBox="0 0 1000 660" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="oceanGlow" cx="50%" cy="50%" r="75%">
+          <stop offset="0%" stop-color="#233440"/>
+          <stop offset="100%" stop-color="#141c22"/>
+        </radialGradient>
+        <filter id="paper" x="-20%" y="-20%" width="140%" height="140%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.012" numOctaves="3" seed="7" result="noise"/>
+          <feColorMatrix in="noise" type="matrix" values="0 0 0 0 0  0 0 0 0 0  0 0 0 0 0  0 0 0 0.4 0"/>
+        </filter>
+
+        <!-- terrain grain textures per biome -->
+        <pattern id="tex-fire" width="34" height="34" patternUnits="userSpaceOnUse" patternTransform="rotate(8)">
+          <rect width="34" height="34" fill="none"/>
+          <path d="M6,30 L6,18 M6,18 L1,11 M6,18 L11,11 M6,13 L2,7 M6,13 L10,7" stroke="#332a20" stroke-width="1" opacity="0.35" fill="none"/>
+          <path d="M24,32 L24,20 M24,20 L19,13 M24,20 L29,13 M24,15 L20,9 M24,15 L28,9" stroke="#332a20" stroke-width="1" opacity="0.3" fill="none"/>
+          <circle cx="16" cy="6" r="1" fill="#332a20" opacity="0.25"/>
+        </pattern>
+
+        <pattern id="tex-earth" width="46" height="30" patternUnits="userSpaceOnUse" patternTransform="rotate(-6)">
+          <path d="M2,26 L12,10 L20,26 Z" fill="none" stroke="#332a20" stroke-width="1" opacity="0.4"/>
+          <path d="M6,26 L12,17 M8.4,22.5 L15.6,22.5" stroke="#332a20" stroke-width="0.8" opacity="0.3"/>
+          <path d="M26,28 L36,8 L44,28 Z" fill="none" stroke="#332a20" stroke-width="1" opacity="0.4"/>
+          <path d="M31,28 L36,18 M33.5,23 L38.5,23" stroke="#332a20" stroke-width="0.8" opacity="0.3"/>
+        </pattern>
+
+        <pattern id="tex-lightning" width="46" height="30" patternUnits="userSpaceOnUse" patternTransform="rotate(4)">
+          <path d="M2,26 L12,6 L20,26 Z" fill="none" stroke="#332a20" stroke-width="1" opacity="0.4"/>
+          <path d="M8,12 L16,12" stroke="#332a20" stroke-width="0.8" opacity="0.3"/>
+          <path d="M26,28 L36,10 L44,28 Z" fill="none" stroke="#332a20" stroke-width="1" opacity="0.4"/>
+          <path d="M31,15 L38,15" stroke="#332a20" stroke-width="0.8" opacity="0.3"/>
+          <ellipse cx="12" cy="4" rx="6" ry="1.6" fill="#332a20" opacity="0.15"/>
+        </pattern>
+
+        <pattern id="tex-wind" width="50" height="26" patternUnits="userSpaceOnUse">
+          <path d="M0,18 Q12,10 25,18 T50,18" stroke="#332a20" stroke-width="1" fill="none" opacity="0.35"/>
+          <path d="M0,24 Q12,17 25,24 T50,24" stroke="#332a20" stroke-width="0.8" fill="none" opacity="0.25"/>
+          <circle cx="10" cy="6" r="0.8" fill="#332a20" opacity="0.3"/>
+          <circle cx="30" cy="9" r="0.8" fill="#332a20" opacity="0.25"/>
+          <circle cx="42" cy="4" r="0.8" fill="#332a20" opacity="0.3"/>
+        </pattern>
+
+        <pattern id="tex-water" width="44" height="20" patternUnits="userSpaceOnUse">
+          <path d="M0,10 q5,-6 11,0 t11,0 t11,0 t11,0" stroke="#332a20" stroke-width="1" fill="none" opacity="0.3"/>
+          <path d="M0,17 q5,-6 11,0 t11,0 t11,0 t11,0" stroke="#332a20" stroke-width="0.8" fill="none" opacity="0.22"/>
+        </pattern>
+
+        <pattern id="tex-minor" width="30" height="30" patternUnits="userSpaceOnUse" patternTransform="rotate(3)">
+          <path d="M6,22 C5,18 6,15 7,12 M9,22 C8,17 9,14 10,11 M12,22 C11,17 13,15 14,12" stroke="#332a20" stroke-width="0.9" fill="none" opacity="0.32"/>
+          <path d="M22,26 C21,22 22,19 23,16 M25,26 C24,21 25,18 26,15" stroke="#332a20" stroke-width="0.9" fill="none" opacity="0.28"/>
+        </pattern>
+      </defs>
+      <rect x="0" y="0" width="1000" height="660" fill="url(#oceanGlow)"/>
+
+      <!-- current ripples in ocean -->
+      <g id="waves" stroke="rgba(233,223,196,0.10)" stroke-width="1.5" fill="none"></g>
+
+      <g id="lands"></g>
+      <g id="terrain-icons"></g>
+      <g id="islands"></g>
+      <rect x="0" y="0" width="1000" height="660" filter="url(#paper)" opacity="0.25" style="mix-blend-mode:overlay"/>
+      <g id="country-labels"></g>
+      <g id="villages"></g>
+    </svg>
+  </div>
+  <p class="hint">passe o mouse ou toque em um selo para ver o nome — clique para abrir os detalhes</p>
+</div>
+
+<footer>Mapa conceitual e fã-feito, com geografia estilizada — não representa uma fonte oficial.</footer>
+
+<div class="panel-backdrop" id="backdrop"></div>
+<aside class="panel" id="panel">
+  <button class="close-btn" id="closeBtn">fechar ✕</button>
+  <div class="emblem" id="pEmblem"></div>
+  <div class="country-tag" id="pCountry">País</div>
+  <h2 id="pName">Vila</h2>
+  <div class="kage" id="pKage">Líder</div>
+  <div class="desc" id="pDesc">Descrição</div>
+  <div class="stat-row"><span>Elemento predominante</span><span id="pElement">—</span></div>
+  <div class="stat-row"><span>Ambiente</span><span id="pTerrain">—</span></div>
+  <div class="stat-row"><span>Símbolo da headband</span><span id="pSymbol">—</span></div>
+  <div class="figures">
+    <h3>Shinobi notáveis</h3>
+    <div id="pFigures"></div>
+  </div>
+</aside>
+
+<script>
+const NS = "http://www.w3.org/2000/svg";
+
+const NATIONS = {
+  fire:      {label:"País do Fogo",      color:"#b8452f"},
+  wind:      {label:"País do Vento",     color:"#c99a4a"},
+  water:     {label:"País da Água",      color:"#3d7189"},
+  lightning: {label:"País do Raio",      color:"#6f5a91"},
+  earth:     {label:"País da Terra",     color:"#7a6a45"},
+  minor:     {label:"Nações Menores",    color:"#8a7f66"}
+};
+
+// ---- original, hand-drawn coastlines (not traced from any source) ----
+const LANDS = [
+  { nation:"earth",
+    d:"M55,150 C50,110 90,80 140,72 C185,65 210,90 235,118 C255,140 268,150 260,175 C252,198 268,205 262,228 C256,252 225,258 205,275 C185,292 175,318 148,322 C118,326 90,312 72,288 C56,266 62,240 50,215 C40,192 60,178 55,150 Z" },
+  { nation:"lightning",
+    d:"M545,32 C580,18 615,28 640,20 C668,11 700,22 715,48 C728,70 715,86 728,108 C740,128 762,140 758,164 C754,188 728,192 712,208 C695,225 690,248 664,252 C638,256 620,238 598,232 C575,226 552,232 538,212 C524,193 536,176 528,155 C520,133 500,122 508,98 C516,74 518,44 545,32 Z" },
+  { nation:"fire",
+    d:"M368,236 C405,210 450,222 490,212 C532,202 568,182 606,198 C642,213 632,246 656,272 C678,296 700,308 700,340 C700,372 682,392 690,422 C698,452 678,472 652,486 C626,500 606,486 578,494 C550,502 530,524 500,520 C470,516 460,492 434,482 C408,472 380,478 362,458 C344,438 356,414 344,392 C332,370 306,362 308,336 C310,310 330,300 338,276 C346,254 340,254 368,236 Z" },
+  { nation:"minor",
+    d:"M462,182 C488,166 518,174 542,168 C566,162 590,172 598,194 C606,216 588,228 592,250 C596,272 578,282 556,282 C534,282 522,266 500,262 C478,258 458,266 448,248 C438,230 452,216 448,198 C444,183 448,192 462,182 Z" },
+  { nation:"wind",
+    d:"M130,352 C165,332 200,344 232,336 C266,328 296,338 318,364 C340,390 328,414 338,440 C348,466 336,488 310,500 C284,512 266,498 240,504 C214,510 196,528 170,520 C144,512 140,488 122,470 C104,452 84,450 82,424 C80,398 96,414 100,388 C104,364 100,368 130,352 Z" },
+  { nation:"water",
+    d:"M712,300 C740,282 770,292 796,282 C822,272 848,284 858,310 C868,336 850,352 858,378 C866,404 852,426 828,438 C804,450 786,432 762,438 C738,444 724,464 700,456 C676,448 674,424 656,406 C638,388 632,364 648,344 C664,324 690,316 712,300 Z" }
+];
+
+const ISLANDS = [
+  {x:900,y:250,r:14},{x:930,y:290,r:9},{x:880,y:330,r:11},
+  {x:920,y:400,r:8},{x:870,y:470,r:15},{x:940,y:460,r:7},
+  {x:800,y:520,r:12},{x:840,y:560,r:9},{x:760,y:230,r:10},
+  {x:955,y:340,r:6},{x:820,y:600,r:8},{x:900,y:590,r:11}
+];
+
+const landsG = document.getElementById('lands');
+const islandsG = document.getElementById('islands');
+const wavesG = document.getElementById('waves');
+
+const INK = "#332a20";
+
+LANDS.forEach(l=>{
+  // base colour fill
+  const base = document.createElementNS(NS,"path");
+  base.setAttribute("d", l.d);
+  base.setAttribute("class","land");
+  base.dataset.nation = l.nation;
+  base.setAttribute("fill", NATIONS[l.nation].color);
+  base.setAttribute("fill-opacity","0.40");
+  landsG.appendChild(base);
+
+  // grain/texture overlay, same shape
+  const grain = document.createElementNS(NS,"path");
+  grain.setAttribute("d", l.d);
+  grain.setAttribute("class","land land-grain");
+  grain.dataset.nation = l.nation;
+  grain.setAttribute("fill", `url(#tex-${l.nation})`);
+  grain.setAttribute("opacity","0.9");
+  grain.style.mixBlendMode = "multiply";
+  landsG.appendChild(grain);
+
+  // inked coastline on top
+  const outline = document.createElementNS(NS,"path");
+  outline.setAttribute("d", l.d);
+  outline.setAttribute("class","land land-outline");
+  outline.dataset.nation = l.nation;
+  outline.setAttribute("fill","none");
+  outline.setAttribute("stroke", INK);
+  outline.setAttribute("stroke-opacity","0.75");
+  outline.setAttribute("stroke-width","2.2");
+  outline.setAttribute("stroke-linejoin","round");
+  landsG.appendChild(outline);
+});
+
+ISLANDS.forEach(is=>{
+  const c = document.createElementNS(NS,"circle");
+  c.setAttribute("class","island");
+  c.setAttribute("cx",is.x); c.setAttribute("cy",is.y); c.setAttribute("r",is.r);
+  c.setAttribute("fill", NATIONS.water.color);
+  c.setAttribute("fill-opacity","0.28");
+  c.setAttribute("stroke", NATIONS.water.color);
+  c.setAttribute("stroke-opacity","0.6");
+  c.setAttribute("stroke-width","1.2");
+  islandsG.appendChild(c);
+});
+
+// subtle current lines in the ocean
+for(let i=0;i<14;i++){
+  const y = 40 + i*45;
+  const path = document.createElementNS(NS,"path");
+  const x0 = 30 + (i%3)*20;
+  path.setAttribute("d", `M${x0},${y} q40,-14 80,0 t80,0 t80,0`);
+  wavesG.appendChild(path);
+}
+
+// ---- physical relief icons scattered across the terrain ----
+const terrainIconsG = document.getElementById('terrain-icons');
+
+function mountainIcon(s=1, snow=true){
+  return `<g transform="scale(${s})">
+    <path d="M0,16 L-13,16 L-4,-4 L2,7 L7,-1 L13,16 Z" fill="#e9dfc4" fill-opacity="0.55" stroke="${INK}" stroke-width="1.3" stroke-linejoin="round"/>
+    ${snow ? `<path d="M-4,-4 L-1.5,0.5 L-4.5,0.5 Z M7,-1 L8.7,1.6 L5.6,1.9 Z" fill="#e9dfc4" fill-opacity="0.9"/>` : ``}
+    <path d="M-9,16 L-3,3 M9,16 L4,6" stroke="${INK}" stroke-width="0.9" opacity="0.4"/>
+  </g>`;
+}
+function treeIcon(s=1){
+  return `<g transform="scale(${s})">
+    <path d="M0,-11 L5,-1 L2,-1 L6.5,6 L-6.5,6 L-2,-1 L-5,-1 Z" fill="#e9dfc4" fill-opacity="0.5" stroke="${INK}" stroke-width="1.1" stroke-linejoin="round"/>
+    <rect x="-1.2" y="6" width="2.4" height="4" fill="${INK}" opacity="0.55"/>
+  </g>`;
+}
+function duneIcon(s=1){
+  return `<g transform="scale(${s})">
+    <path d="M-14,4 Q-6,-8 2,4 Q8,-4 14,4" fill="none" stroke="${INK}" stroke-width="1.3" opacity="0.55"/>
+    <path d="M-14,8 Q-6,-1 2,8 Q8,1 14,8" fill="none" stroke="${INK}" stroke-width="1" opacity="0.4"/>
+  </g>`;
+}
+function reedIcon(s=1){
+  return `<g transform="scale(${s})">
+    <path d="M-4,8 C-5,2 -3,-4 -2,-9 M0,8 C-1,1 1,-6 2,-10 M4,8 C3,2 5,-3 6,-8" stroke="${INK}" stroke-width="1.2" fill="none" opacity="0.5"/>
+  </g>`;
+}
+function grassIcon(s=1){
+  return `<g transform="scale(${s})">
+    <path d="M-3,5 C-4,1 -2,-3 -1,-5 M0,5 C-0.5,0 1,-4 1.5,-6 M3,5 C2,1 4,-2 5,-5" stroke="${INK}" stroke-width="1" fill="none" opacity="0.45"/>
+  </g>`;
+}
+
+function placeIcon(html, x, y, rot=0){
+  const g = document.createElementNS(NS,"g");
+  g.setAttribute("transform", `translate(${x},${y}) rotate(${rot})`);
+  g.style.opacity = "0.85";
+  g.innerHTML = html;
+  terrainIconsG.appendChild(g);
+  return g;
+}
+
+// Earth country — rugged highlands
+[[95,150,1],[130,110,0.85],[165,175,1.05],[110,220,0.9],[175,250,0.8],[145,285,0.95],[205,205,0.85],[75,195,0.75]]
+  .forEach(([x,y,s])=>placeIcon(mountainIcon(s), x, y));
+
+// Lightning country — cloud-wrapped peaks
+[[590,90,1],[630,60,0.9],[670,95,1.05],[610,140,0.85],[690,150,0.95],[550,130,0.8],[720,120,0.85],[650,190,0.9]]
+  .forEach(([x,y,s])=>placeIcon(mountainIcon(s), x, y));
+
+// Fire country — dense forest
+[[400,270,1],[430,310,0.85],[460,350,1],[490,290,0.9],[520,390,1.05],[550,320,0.85],[580,410,0.95],
+ [610,350,0.85],[440,430,0.9],[470,460,1],[380,400,0.85],[350,340,0.9],[620,290,0.8],[560,250,0.85]]
+  .forEach(([x,y,s])=>placeIcon(treeIcon(s), x, y));
+
+// Wind country — dunes
+[[150,380,1],[190,410,0.9],[230,390,1],[130,440,0.85],[170,470,0.95],[260,440,0.9],[210,500,0.85],[290,480,0.8],[110,500,0.8]]
+  .forEach(([x,y,s])=>placeIcon(duneIcon(s), x, y, (Math.random()*10-5)));
+
+// Water country — coastal reeds
+[[700,320,1],[740,300,0.9],[780,340,1],[820,310,0.85],[790,400,0.9],[730,420,0.85],[760,440,0.8]]
+  .forEach(([x,y,s])=>placeIcon(reedIcon(s), x, y));
+
+// Minor plains — light grass
+[[485,190,0.9],[520,175,1],[555,200,0.9],[500,230,0.85],[540,255,0.9],[475,220,0.8]]
+  .forEach(([x,y,s])=>placeIcon(grassIcon(s), x, y));
+
+const COUNTRY_LABELS = [
+  {nation:"fire", text:"País do Fogo", x:500, y:365},
+  {nation:"wind", text:"País do Vento", x:212, y:440},
+  {nation:"water", text:"País da Água", x:762, y:400},
+  {nation:"lightning", text:"País do Raio", x:630, y:118},
+  {nation:"earth", text:"País da Terra", x:150, y:195}
+];
+const countryLabelsG = document.getElementById('country-labels');
+COUNTRY_LABELS.forEach(c=>{
+  const t = document.createElementNS(NS,"text");
+  t.setAttribute("x", c.x); t.setAttribute("y", c.y);
+  t.setAttribute("text-anchor","middle");
+  t.setAttribute("class","land-label");
+  t.setAttribute("font-size","15");
+  t.textContent = c.text;
+  countryLabelsG.appendChild(t);
+});
+
+// ---- original icon glyphs (not copied from any franchise or reference image) ----
+function iconPath(id){
+  switch(id){
+    case "konoha": // spiral
+      return `<path class="icon-glyph" d="M0,0 m0,-6 a6,6 0 1,1 -0.1,0 M0,-6 a3,3 0 1,0 3,3"/>`;
+    case "suna": // hourglass
+      return `<path class="icon-glyph" d="M-5,-6 L5,-6 L-4,6 L4,6 Z M-5,-6 L5,6 M5,-6 L-5,6" />`;
+    case "kiri": // waves
+      return `<path class="icon-glyph" d="M-7,-3 q3,-5 7,0 q4,5 7,0 M-7,4 q3,-5 7,0 q4,5 7,0"/>`;
+    case "kumo": // cloud
+      return `<path class="icon-glyph" d="M-7,3 a4,4 0 0,1 1,-7.8 a5,5 0 0,1 9.5,-1 a4.2,4.2 0 0,1 3.5,7.8 a3,3 0 0,1 -1,7 h-11 a3,3 0 0,1 -2,-6 Z"/>`;
+    case "iwa": // rock diamond
+      return `<path class="icon-glyph" d="M0,-7 L7,0 L0,7 L-7,0 Z M0,-7 L0,7 M-7,0 L7,0"/>`;
+    case "oto": // sound wave
+      return `<path class="icon-glyph" d="M-8,0 h2 M-4,-5 v10 M0,-8 v16 M4,-5 v10 M8,0 h-2"/>`;
+    case "ame": // raindrop
+      return `<path class="icon-glyph filled" d="M0,-7 C4,-1 6,2 6,5 a6,6 0 1,1 -12,0 C-6,2 -4,-1 0,-7 Z"/>`;
+    case "taki": // waterfall lines + basin
+      return `<path class="icon-glyph" d="M-4,-7 v9 M0,-7 v9 M4,-7 v9 M-7,4 q7,6 14,0"/>`;
+    case "kusa": // grass blades
+      return `<path class="icon-glyph" d="M-5,7 C-6,0 -3,-6 -2,-7 C-1,-2 -2,3 -3,7 M0,7 C-1,-1 1,-7 2,-8 C3,-2 2,4 1,7 M5,7 C4,0 6,-5 7,-7 C8,-2 7,3 6,7"/>`;
+    case "yugakure": // steam swirl
+      return `<path class="icon-glyph" d="M-5,7 C-6,3 -2,3 -3,-1 C-4,-4 -1,-4 -2,-7 M2,7 C1,3 5,3 4,-1 C3,-4 6,-4 5,-7"/>`;
+    case "hoshi": // star
+      return `<path class="icon-glyph filled" d="M0,-8 L2.2,-2.6 L8,-2.2 L3.4,1.6 L5,7.6 L0,4 L-5,7.6 L-3.4,1.6 L-8,-2.2 L-2.2,-2.6 Z"/>`;
+    case "shimo": // snowflake
+      return `<path class="icon-glyph" d="M0,-8 v16 M-7,-4 l14,8 M-7,4 l14,-8 M0,-8 l-2,3 M0,-8 l2,3 M0,8 l-2,-3 M0,8 l2,-3"/>`;
+    default:
+      return `<circle class="icon-glyph filled" r="4"/>`;
+  }
+}
+
+const VILLAGES = [
+  { id:"konoha", name:"Konohagakure", short:"Vila da Folha", nation:"fire", x:520, y:340,
+    kage:"Liderada pelo Hokage",
+    desc:"A vila mais influente entre as cinco grandes, erguida em meio a uma extensa floresta e vigiada pelos rostos esculpidos dos antigos líderes no Monte Hokage. Fundada pelos clãs Senju e Uchiha após anos de guerra entre clãs.",
+    element:"Variado (destaque para Madeira e Fogo)", terrain:"Floresta densa e vales verdes", symbol:"Espiral",
+    figures:["Clã Senju","Clã Uchiha","Clã Hyuga","Clã Nara"] },
+  { id:"suna", name:"Sunagakure", short:"Vila da Areia", nation:"wind", x:230, y:430,
+    kage:"Liderada pelo Kazekage",
+    desc:"Escondida sob o sol implacável do deserto, a vila esculpiu seus prédios diretamente na rocha e na areia compactada. Conhecida por técnicas de marionetes e pelo domínio da areia como arma e escudo.",
+    element:"Vento e técnicas de Areia", terrain:"Deserto árido e canyons", symbol:"Ampulheta",
+    figures:["Clã Sabaku","Mestres de marionetes"] },
+  { id:"kiri", name:"Kirigakure", short:"Vila da Névoa", nation:"water", x:770, y:370,
+    kage:"Liderada pelo Mizukage",
+    desc:"Erguida em uma ilha frequentemente envolta por neblina espessa, carregou por anos a fama de 'Vila do Sangue' por seus exames ninja brutais, história que buscou superar sob lideranças mais recentes.",
+    element:"Água", terrain:"Arquipélago e costas nebulosas", symbol:"Ondas",
+    figures:["Sete Espadachins da Névoa","Clã Hozuki"] },
+  { id:"kumo", name:"Kumogakure", short:"Vila da Nuvem", nation:"lightning", x:635, y:130,
+    kage:"Liderada pelo Raikage",
+    desc:"Construída no topo de picos elevados, quase sempre cobertos por nuvens, a vila é conhecida pela força física de seus shinobi e por rígidos códigos de proteção às linhagens sucessórias e kekkei genkai.",
+    element:"Raio", terrain:"Montanhas altas e nuvens permanentes", symbol:"Nuvem",
+    figures:["Clã Yotsuki","Guarda de elite do Raikage"] },
+  { id:"iwa", name:"Iwagakure", short:"Vila da Pedra", nation:"earth", x:150, y:190,
+    kage:"Liderada pelo Tsuchikage",
+    desc:"Talhada em terreno montanhoso e rochoso, é reconhecida por sua tradição militar rígida e por técnicas de Terra de altíssimo nível, incluindo jutsus capazes de mover montanhas inteiras.",
+    element:"Terra", terrain:"Cordilheiras e platôs rochosos", symbol:"Losango de pedra",
+    figures:["Clã Kamizuru","Especialistas em Terra"] },
+  { id:"oto", name:"Otogakure", short:"Vila do Som", nation:"minor", x:520, y:210,
+    kage:"Fundada por um mestre renegado",
+    desc:"Vila jovem, criada por um ninja desertor de Konoha como base de experimentos e recrutamento de talentos descartados por outras vilas, usando o som como arma sonora e psicológica.",
+    element:"Som", terrain:"Florestas e cavernas escondidas", symbol:"Onda sonora",
+    figures:["Time de recrutas do fundador"] },
+  { id:"ame", name:"Amegakure", short:"Vila da Chuva", nation:"minor", x:565, y:250,
+    kage:"Governada por um líder enigmático",
+    desc:"Uma cidade industrial onde chove quase o ano inteiro, marcada por décadas de guerra civil e pela ascensão de uma organização de criminosos rank-S que a transformou em seu quartel-general oculto.",
+    element:"Chuva controlada", terrain:"Cidade vertical sob chuva constante", symbol:"Gota de chuva",
+    figures:["Organização renegada de capas nuvem"] },
+  { id:"taki", name:"Takigakure", short:"Vila da Cachoeira", nation:"minor", x:475, y:250,
+    kage:"Vila menor, neutra nas grandes guerras",
+    desc:"Construída ao redor de uma imponente cachoeira, manteve-se neutra durante os grandes conflitos entre as cinco nações, abrigando um jinchuriki que buscou reconhecimento entre os próprios habitantes.",
+    element:"Água", terrain:"Cachoeiras e desfiladeiros", symbol:"Queda d'água",
+    figures:["Guardiões da cachoeira sagrada"] },
+  { id:"kusa", name:"Kusagakure", short:"Vila da Grama", nation:"minor", x:520, y:400,
+    kage:"Pequena vila entre território maior",
+    desc:"Situada em planícies gramíneas na fronteira entre nações maiores, é frequentemente palco de exames de seleção conjuntos entre diversas vilas ninja.",
+    element:"Variado", terrain:"Campos abertos e florestas de bambu", symbol:"Folhas de grama",
+    figures:["Anfitriã histórica de exames conjuntos"] },
+  { id:"yugakure", name:"Yugakure", short:"Vila das Fontes Termais", nation:"minor", x:700, y:300,
+    kage:"País turístico sem exército próprio",
+    desc:"Menos uma vila ninja tradicional e mais um refúgio de fontes termais, vivendo do turismo e mantendo poucos combatentes para sua própria defesa.",
+    element:"—", terrain:"Vales vulcânicos e fontes quentes", symbol:"Vapor",
+    figures:["Administração civil local"] },
+  { id:"hoshi", name:"Hoshigakure", short:"Vila da Estrela", nation:"minor", x:180, y:300,
+    kage:"Pequena vila isolacionista",
+    desc:"Vila discreta e isolada, conhecida por manter em segredo uma tecnologia de armadura de chakra capaz de imitar kekkei genkai de outros clãs.",
+    element:"Chakra sintético", terrain:"Vales isolados de difícil acesso", symbol:"Estrela",
+    figures:["Guardiões da armadura estelar"] },
+  { id:"shimo", name:"Shimogakure", short:"Vila da Geada", nation:"minor", x:820, y:150,
+    kage:"Vila remota do extremo norte",
+    desc:"Localizada nas terras geladas mais distantes do continente, raramente aparece nos grandes conflitos, preservando tradições próprias isoladas do resto do mundo shinobi.",
+    element:"Gelo", terrain:"Tundra congelada", symbol:"Floco de neve",
+    figures:["Clãs nativos do gelo"] }
+];
+
+const villagesG = document.getElementById('villages');
+function colorFor(nation){ return NATIONS[nation].color; }
+
+VILLAGES.forEach(v=>{
+  const g = document.createElementNS(NS,"g");
+  g.setAttribute("class","village");
+  g.dataset.id = v.id;
+  g.dataset.nation = v.nation;
+  g.setAttribute("transform", `translate(${v.x},${v.y})`);
+
+  const ring = document.createElementNS(NS,"circle");
+  ring.setAttribute("class","ring");
+  ring.setAttribute("r","13");
+  ring.setAttribute("stroke", colorFor(v.nation));
+
+  const badge = document.createElementNS(NS,"g");
+  badge.setAttribute("class","badge");
+
+  const core = document.createElementNS(NS,"circle");
+  core.setAttribute("class","core");
+  core.setAttribute("r","13");
+  core.setAttribute("fill", "var(--parchment)");
+  core.setAttribute("stroke", colorFor(v.nation));
+  core.setAttribute("stroke-width","2.2");
+  badge.appendChild(core);
+  badge.insertAdjacentHTML("beforeend", iconPath(v.id));
+
+  const label = document.createElementNS(NS,"text");
+  label.setAttribute("class","label");
+  label.setAttribute("x","0");
+  label.setAttribute("y","-19");
+  label.setAttribute("text-anchor","middle");
+  label.textContent = v.short;
+
+  g.appendChild(ring);
+  g.appendChild(badge);
+  g.appendChild(label);
+  g.addEventListener("click", ()=>openPanel(v));
+  villagesG.appendChild(g);
+});
+
+const legend = document.getElementById('legend');
+let activeFilter = null;
+Object.entries(NATIONS).forEach(([key,val])=>{
+  const btn = document.createElement('button');
+  btn.innerHTML = `<span class="dot" style="background:${val.color};color:${val.color}"></span>${val.label}`;
+  btn.addEventListener('click', ()=>{
+    activeFilter = (activeFilter === key) ? null : key;
+    applyFilter();
+    [...legend.children].forEach(c=>c.classList.remove('active'));
+    if(activeFilter) btn.classList.add('active');
+  });
+  legend.appendChild(btn);
+});
+
+function applyFilter(){
+  document.querySelectorAll('.village').forEach(v=>{
+    v.classList.toggle('dimmed', !(!activeFilter || v.dataset.nation === activeFilter));
+  });
+  document.querySelectorAll('.land').forEach(l=>{
+    l.style.opacity = (!activeFilter || l.dataset.nation===activeFilter) ? "1" : "0.25";
+  });
+}
+
+const panel = document.getElementById('panel');
+const backdrop = document.getElementById('backdrop');
+
+function openPanel(v){
+  document.querySelectorAll('.village').forEach(el=>el.classList.toggle('selected', el.dataset.id===v.id));
+  document.getElementById('pEmblem').innerHTML = `<svg viewBox="-10,-10,20,20" style="overflow:visible"><g style="transform:scale(1.4)">${iconPath(v.id).replace('var(--ink)', colorFor(v.nation))}</g></svg>`;
+  document.getElementById('pEmblem').style.borderColor = colorFor(v.nation);
+  document.getElementById('pCountry').textContent = NATIONS[v.nation].label;
+  document.getElementById('pName').textContent = v.name;
+  document.getElementById('pKage').textContent = v.kage;
+  document.getElementById('pDesc').textContent = v.desc;
+  document.getElementById('pElement').textContent = v.element;
+  document.getElementById('pTerrain').textContent = v.terrain;
+  document.getElementById('pSymbol').textContent = v.symbol;
+  const figuresEl = document.getElementById('pFigures');
+  figuresEl.innerHTML = '';
+  v.figures.forEach(f=>{
+    const chip = document.createElement('span');
+    chip.className = 'chip';
+    chip.textContent = f;
+    figuresEl.appendChild(chip);
+  });
+  panel.classList.add('open');
+  backdrop.classList.add('open');
+}
+
+function closePanel(){
+  panel.classList.remove('open');
+  backdrop.classList.remove('open');
+  document.querySelectorAll('.village').forEach(el=>el.classList.remove('selected'));
+}
+
+document.getElementById('closeBtn').addEventListener('click', closePanel);
+backdrop.addEventListener('click', closePanel);
+document.addEventListener('keydown', e=>{ if(e.key==='Escape') closePanel(); });
+</script>
+</body>
+</html>
